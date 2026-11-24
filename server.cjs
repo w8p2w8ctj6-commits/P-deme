@@ -36,4 +36,32 @@ page(r,s.name,'<span class="pill">'+(s.pickup?'Recogida ':'')+(s.delivery?'· En
 app.post('/pedido/:slug',async(q,r)=>{if(limit(q,'order',15))return err(r,'Intenta más tarde',429);const s=await one('SELECT * FROM shops WHERE slug=$1 AND active',q.params.slug),b=q.body;if(!s)return err(r,'Negocio no disponible',404);const n=S(b.customer,80),p=S(b.phone,30),m=b.mode,a=S(b.address,300);if(!n||!/^[-+() 0-9]{7,30}$/.test(p)||!['pickup','delivery'].includes(m)||(m==='pickup'&&!s.pickup)||(m==='delivery'&&(!s.delivery||!a)))return err(r,'Verifica los datos y la modalidad');const ids=Object.keys(b).filter(k=>/^qty_\d+$/.test(k)&&Number(b[k])!==0);if(!ids.length||ids.length>50)return err(r,'Agrega productos al pedido');let items=[],total=0;for(const k of ids){const id=Number(k.slice(4)),qty=Number(b[k]);if(!Number.isSafeInteger(qty)||qty<1||qty>30)return err(r,'Cantidad inválida');const x=await one('SELECT id,name,price FROM products WHERE id=$1 AND shop=$2 AND active',id,s.id);if(!x)return err(r,'Producto no disponible');items.push({...x,qty,note:S(b['note_'+id],150)});total+=x.price*qty}if(m==='delivery'&&total<s.minimum)return err(r,'No alcanzas el pedido mínimo');if(m==='delivery')total+=s.fee;const id=token();await sql('INSERT INTO orders(id,shop,customer,phone,mode,address,notes,scheduled,items,total) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',id,s.id,n,p,m,m==='delivery'?a:'',S(b.notes,500),S(b.scheduled,50),JSON.stringify(items),total);r.redirect('/seguimiento/'+id)});
 app.get('/seguimiento/:id',async(q,r)=>{const o=await one('SELECT orders.status,orders.total,shops.name FROM orders JOIN shops ON shops.id=orders.shop WHERE orders.id=$1',q.params.id);if(!o)return err(r,'Pedido no encontrado',404);page(r,'Seguimiento','<div class="card narrow"><span class="pill">'+E(o.name)+'</span><h1 id="status">'+E(o.status)+'</h1><p>Pedido #'+E(q.params.id.slice(0,8))+' · '+cash(o.total)+'</p><p>Conserva este enlace para consultar el estado del pedido.</p></div><script>setInterval(async()=>{try{let r=await fetch(location.pathname),h=new DOMParser().parseFromString(await r.text(),"text/html");document.querySelector("#status").textContent=h.querySelector("#status").textContent}catch{}},8000)</script>')});
 app.use((q,r)=>err(r,'Página no encontrada',404));app.use((e,q,r,n)=>{console.error(e.message);if(!r.headersSent)err(r,'Error del servidor. Intenta de nuevo.',500)});
-init().then(()=>app.listen(Number(process.env.PORT)||3000,'0.0.0.0',()=>console.log('Pídeme listo'))).catch(e=>{console.error('Database initialization failed:',e.message);process.exit(1)});
+
+async function smoke(port){
+ const key=crypto.randomBytes(8).toString('hex'),a='qa-'+key+'-a',b='qa-'+key+'-b',base='http://127.0.0.1:'+port;let passed=[];
+ const check=(ok,msg)=>{if(!ok)throw new Error(msg);passed.push(msg)};
+ const call=(path,body,c='')=>fetch(base+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/x-www-form-urlencoded'}:{}),...(c?{Cookie:c}:{})},body:body?new URLSearchParams(body):undefined,redirect:'manual'});
+ const create=async(s)=>{let r=await call('/registro',{name:'Prueba interna',slug:s,email:s+'@example.invalid',password:key+'!test'});check(r.status===302&&r.headers.get('location')==='/panel','registro '+s.slice(-1));return r.headers.get('set-cookie').split(';')[0]};
+ try{
+  const ca=await create(a),cb=await create(b);
+  const shop=await one('SELECT id FROM shops WHERE slug=$1',a);
+  let p=await call('/producto',{id:'0',name:'Producto de prueba',price:'35',active:'on'},ca);check(p.status===302,'alta de producto');
+  const product=await one('SELECT id FROM products WHERE shop=$1',shop.id);
+  p=await call('/configuracion',{name:'Prueba interna',active:'on',pickup:'on',delivery:'on',fee:'20',minimum:'30'},ca);check(p.status===302,'configuración entrega');
+  const menu=await call('/m/'+a);check(menu.status===200&&(await menu.text()).includes('Producto de prueba'),'menú público');
+  p=await call('/producto',{id:String(product.id),name:'Intruso',price:'1',active:'on'},cb);check(p.status===404,'aislamiento de productos');
+  for(const mode of ['pickup','delivery']){
+   p=await call('/pedido/'+a,{customer:'Prueba interna',phone:'0000000000',mode,address:'Dirección ficticia', ['qty_'+product.id]:'2'});
+   check(p.status===302&&p.headers.get('location').startsWith('/seguimiento/'),'pedido '+mode);
+   const path=p.headers.get('location'),id=path.split('/').pop(),o=await one('SELECT total FROM orders WHERE id=$1',id);
+   check(o.total===(mode==='delivery'?9000:7000),'total '+mode);
+   p=await call('/estado',{id,status:'Confirmado'},cb);check(p.status===400,'aislamiento de pedidos '+mode);
+   p=await call('/estado',{id,status:'Confirmado'},ca);check(p.status===302,'confirmación '+mode);
+   p=await call(path);check(p.status===200&&(await p.text()).includes('Confirmado'),'seguimiento '+mode);
+  }
+  p=await call('/login',{email:a+'@example.invalid',password:key+'!test'});check(p.status===302&&!!p.headers.get('set-cookie'),'inicio de sesión');
+  console.log('PIDEME_SMOKE_PASS '+passed.length+' comprobaciones: '+passed.join('; '));
+ }catch(e){console.error('PIDEME_SMOKE_FAIL '+e.message+'; completadas '+passed.length)}
+ finally{try{for(const table of ['orders','products','sessions'])await sql('DELETE FROM '+table+' WHERE shop IN (SELECT id FROM shops WHERE slug IN ($1,$2))',a,b);await sql('DELETE FROM shops WHERE slug IN ($1,$2)',a,b);console.log('PIDEME_SMOKE_CLEANUP_OK')}catch(e){console.error('PIDEME_SMOKE_CLEANUP_FAIL '+e.message)}}
+}
+init().then(()=>{const port=Number(process.env.PORT)||3000;app.listen(port,'0.0.0.0',()=>{console.log('Pídeme listo');smoke(port).catch(e=>console.error(e.message))})}).catch(e=>{console.error('Database initialization failed:',e.message);process.exit(1)});
