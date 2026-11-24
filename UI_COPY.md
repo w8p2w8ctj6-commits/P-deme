@@ -1,7 +1,9 @@
-# Reglas de interfaz de P-deme
+# Reglas de interfaz y entrega de P-deme
 
-- La pantalla de inicio muestra el catálogo real, no una demostración ni una portada publicitaria.
-- Usar etiquetas breves y funcionales. No usar eslóganes, textos promocionales, subtítulos redundantes, explicaciones obvias ni encabezados duplicados.
-- Una acción debe tener un acceso claro; evitar duplicados en la misma pantalla.
-- Mantener precios, desglose de cobros, estados, errores, privacidad e instrucciones necesarias para completar acciones.
-- No agregar texto decorativo al implementar funciones nuevas. Revisar cada pantalla antes de publicar.
+- El logo lleva al portal de inicio, con accesos a clientes, comercios y repartidores. Explorar es una pantalla distinta que muestra negocios y menús reales.
+- Usar etiquetas breves y funcionales. No eslóganes, textos promocionales, subtítulos redundantes, explicaciones obvias ni encabezados duplicados.
+- No ocultar datos existentes ni cambiar rutas sin revisar las consecuencias. Respetar la privacidad y las preferencias explícitas de publicación.
+- Mantener precios, estados, errores, privacidad e instrucciones necesarias para completar acciones.
+- Revisar impactos y flujos de cada rol antes de modificar la aplicación. Añadir pruebas de regresión para errores encontrados.
+- Verificar el despliegue y la navegación en un navegador real; las pruebas HTTP no sustituyen la inspección visual y funcional. No afirmar que se realizó una prueba no efectuada.
+- Corregir errores detectados antes de declarar la actualización terminada. No usar datos ficticios visibles al público.
