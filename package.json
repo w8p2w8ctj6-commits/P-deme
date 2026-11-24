@@ -1,0 +1,16 @@
+{
+  "name": "pideme",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.cjs"
+  },
+  "dependencies": {
+    "express": "5.1.0",
+    "pg": "8.16.3",
+    "qrcode": "1.5.4"
+  }
+}
