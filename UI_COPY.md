@@ -1,6 +1,6 @@
 # Reglas de interfaz y entrega de P-deme
 
-- El logo lleva al portal de inicio, con accesos a clientes, comercios y repartidores. Explorar es una pantalla distinta que muestra negocios y menús reales.
+- Conservar la portada gráfica de P-deme (identidad coral y amarilla, composición original y accesos ilustrados). Eliminar textos innecesarios no autoriza eliminar la identidad visual ni rediseñar la estructura. El logo vuelve a esta portada; Explorar es una pantalla distinta con negocios y menús reales.
 - Usar etiquetas breves y funcionales. No eslóganes, textos promocionales, subtítulos redundantes, explicaciones obvias ni encabezados duplicados.
 - No ocultar datos existentes ni cambiar rutas sin revisar las consecuencias. Respetar la privacidad y las preferencias explícitas de publicación.
 - Mantener precios, estados, errores, privacidad e instrucciones necesarias para completar acciones.
