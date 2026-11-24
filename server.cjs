@@ -181,6 +181,38 @@ async function smoke(port){
   }finally{ctrl.abort();ctrl2.abort();reader?.cancel().catch(()=>{});other?.cancel().catch(()=>{})}
   let panelLive=await call('/panel',null,ca);check(panelLive.ok&&(await panelLive.text()).includes('new-order-banner'),'bandeja con alerta de pedidos');
 
+
+  const driverEmail=a+'-driver@example.invalid',driverEmail2=b+'-driver@example.invalid';
+  const driverCreate=async email=>{let res=await call('/repartidor/registro',{name:'Repartidor QA',phone:'0000000000',zone:'Mexicali',vehicle:'Moto',fee:'35',email,password:key+'!test'});check(res.status===302&&res.headers.get('location')==='/repartidor','registro repartidor');return res.headers.get('set-cookie').split(';')[0]};
+  const dc=await driverCreate(driverEmail),dc2=await driverCreate(driverEmail2);
+  const dr=await one('SELECT id FROM drivers WHERE email=$1',driverEmail);
+  try{
+   let mp=await call('/admin/repartidores',null,dc);check(mp.status===302,'administración repartidores protegida');
+   mp=await call('/repartidor/config',{fee:'35',zone:'Mexicali',online:'on'},dc);check(mp.status===302&&!(await one('SELECT online FROM drivers WHERE id=$1',dr.id)).online,'repartidor no aprobado no disponible');
+   const dt=token();await sql("INSERT INTO platform_sessions VALUES($1,NOW()+INTERVAL '10 minutes')",hash(dt));try{mp=await call('/admin/repartidores',{id:String(dr.id),approved:'1'},'pideme_platform='+dt);check(mp.status===302&&(await one('SELECT approved FROM drivers WHERE id=$1',dr.id)).approved,'aprobar repartidor')}finally{await sql('DELETE FROM platform_sessions WHERE token=$1',hash(dt))}
+   mp=await call('/repartidor/config',{fee:'35',zone:'Mexicali',online:'on'},dc);check(mp.status===302,'repartidor disponible');
+   await sql('UPDATE shops SET platform_blocked=FALSE WHERE id=$1',shop.id);
+   mp=await call('/configuracion',{name:'Prueba interna',active:'on',pickup:'on',delivery:'on',fee:'20',minimum:'30',network_delivery:'on',listed:'on',city:'Mexicali',address:'Origen QA',neighborhood:'Colonia QA'},ca);check(mp.status===302,'activar marketplace');
+   mp=await call('/explorar?q=Producto+de+prueba');check(mp.ok&&(await mp.text()).includes('/m/'+a),'descubrir comercio por producto');
+   mp=await call('/m/'+a);const html=await mp.text();check(mp.ok&&html.includes(dr.id+':3500')&&html.includes('Comisión P-deme'),'tarifa visible antes de pedir');
+   const body={customer:'QA',phone:'0000000000',mode:'network',address:'Destino QA',driver_quote:dr.id+':3500',['qty_'+product.id]:'2'};
+   mp=await call('/pedido/'+a,{...body,driver_quote:dr.id+':1'});check(mp.status===409,'rechazo tarifa adulterada');
+   mp=await call('/pedido/'+a,body);check(mp.status===302,'pedido con repartidor');
+   const tracking=mp.headers.get('location'),oid=tracking.split('/').pop(),order=await one('SELECT * FROM orders WHERE id=$1',oid);
+   check(order.total===10500&&order.driver_fee===3500&&order.driver===dr.id,'desglose sin comisión');
+   mp=await call('/pedido/'+a,body);check(mp.status===409,'evitar doble asignación');
+   mp=await call('/repartidor',null,dc);check(mp.ok&&(await mp.text()).includes('Destino QA'),'entrega asignada visible');
+   mp=await call('/repartidor',null,dc2);check(mp.ok&&!(await mp.text()).includes('Destino QA'),'aislamiento entre repartidores');
+   for(const status of ['Confirmado','En preparación','Listo']){mp=await call('/estado',{id:oid,status},ca);check(mp.status===302,'comercio '+status)}
+   mp=await call('/estado',{id:oid,status:'Entregado'},ca);check(mp.status===400,'comercio no puede simular entrega');
+   mp=await call('/repartidor/estado',{id:oid,status:'En camino'},dc2);check(mp.status===403||mp.status===400,'repartidor ajeno no modifica pedido');
+   mp=await call('/repartidor/estado',{id:oid,status:'En camino'},dc);check(mp.status===302,'recogida por repartidor');
+   mp=await call(tracking);check(mp.ok&&(await mp.text()).includes(order.delivery_code),'código de entrega al cliente');
+   mp=await call('/repartidor/estado',{id:oid,status:'Entregado',code:'000000'},dc);check(mp.status===400,'código incorrecto rechazado');
+   mp=await call('/repartidor/estado',{id:oid,status:'Entregado',code:order.delivery_code},dc);check(mp.status===302&&(await one('SELECT status FROM orders WHERE id=$1',oid)).status==='Entregado','entrega confirmada por código');
+   mp=await call('/repartidor',null,dc);check(mp.ok&&(await mp.text()).includes('35.00'),'ingresos de repartidor');
+  }finally{await sql('DELETE FROM orders WHERE driver IN (SELECT id FROM drivers WHERE email IN ($1,$2))',driverEmail,driverEmail2);await sql('DELETE FROM drivers WHERE email IN ($1,$2)',driverEmail,driverEmail2)}
+
   console.log('PIDEME_SMOKE_PASS '+passed.length+' comprobaciones: '+passed.join('; '));
  }catch(e){console.error('PIDEME_SMOKE_FAIL '+e.message+'; completadas '+passed.length)}
  finally{try{for(const table of ['subscription_payments','orders','products','sessions'])await sql('DELETE FROM '+table+' WHERE shop IN (SELECT id FROM shops WHERE slug IN ($1,$2))',a,b);await sql('DELETE FROM shops WHERE slug IN ($1,$2)',a,b);console.log('PIDEME_SMOKE_CLEANUP_OK')}catch(e){console.error('PIDEME_SMOKE_CLEANUP_FAIL '+e.message)}}
