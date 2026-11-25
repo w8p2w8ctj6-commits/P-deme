@@ -8,7 +8,7 @@ function icon(n,maskable=false){const b=Buffer.alloc(n*(1+4*n)),violet=[109,40,2
 const icons=new Map();
 const sw=String.raw`
 'use strict';
-const CACHE='pdeme-static-v3', ASSETS=['/offline','/app-icon-192.png','/app-icon-512.png','/app-icon-maskable.png','/brand/logo.svg'];
+const CACHE='pdeme-static-v4', ASSETS=['/offline','/app-icon-192.png','/app-icon-512.png','/app-icon-maskable.png','/brand/logo.svg'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('pdeme-static-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{const r=e.request,u=new URL(r.url);if(r.method!=='GET'||u.origin!==self.location.origin)return;if(r.mode==='navigate'){e.respondWith(fetch(r).catch(()=>caches.match('/offline')));return}if(ASSETS.includes(u.pathname))e.respondWith(caches.match(r).then(v=>v||fetch(r)))});
@@ -44,7 +44,8 @@ app.get('/manifest-repartidor.webmanifest',(q,r)=>r.type('application/manifest+j
 app.get('/sw.js',(q,r)=>r.set('Service-Worker-Allowed','/').type('application/javascript').send(sw));
 app.get('/app-client.js',(q,r)=>r.type('application/javascript').send(client));
 app.get('/offline',(q,r)=>r.type('html').send(offline));
-for(const [path,size,mask]of [['/app-icon-192.png',192,false],['/app-icon-512.png',512,false],['/apple-touch-icon.png',180,false],['/app-icon-maskable.png',512,true]])app.get(path,(q,r)=>{if(!icons.has(path))icons.set(path,icon(size,mask));r.type('png').send(icons.get(path))});
+for(const [path,size,mask]of [['/brand/favicon-violet-32.png',32,false],['/app-icon-192.png',192,false],['/app-icon-512.png',512,false],['/apple-touch-icon.png',180,false],['/app-icon-maskable.png',512,true]])app.get(path,(q,r)=>{if(!icons.has(path))icons.set(path,icon(size,mask));r.type('png').send(icons.get(path))});
+app.get('/favicon.ico',(q,r)=>{const path='/brand/favicon-violet-32.png';if(!icons.has(path))icons.set(path,icon(32));const png=icons.get(path),head=Buffer.alloc(22);head.writeUInt16LE(1,2);head.writeUInt16LE(1,4);head[6]=32;head[7]=32;head.writeUInt16LE(1,10);head.writeUInt16LE(32,12);head.writeUInt32LE(png.length,14);head.writeUInt32LE(22,18);r.type('image/x-icon').send(Buffer.concat([head,png]))});
 app.get('/instalar',(q,r)=>page(r,'Instalar P-deme','<div class="card narrow" style="text-align:center"><img src="/app-icon-192.png" alt="" width="86" height="86"><h1>Instalar P-deme</h1><button class="full" data-install onclick="installPd()">Instalar aplicación</button><div style="text-align:left"><h2>Android</h2><p>Chrome → Menú ⋮ → Instalar aplicación.</p><h2>iPhone</h2><p>Safari → Compartir → Agregar a pantalla de inicio. Avisos compatibles desde iOS 16.4.</p><p>Los avisos requieren permiso, internet y sesión activa.</p></div><a class="btn secondary full" href="'+(q.query.role==='driver'?'/repartidor':'/panel')+'">Ir al panel</a></div>'));
 app.get('/api/push/key',allow,(q,r)=>r.json({key:vapid.public_key}));
 app.post('/api/push/subscribe',allow,async(q,r)=>{if(limit(q,'push-sub',15))return r.status(429).json({ok:false});const b=q.body||{},k=b.keys||{};if(!safeEndpoint(b.endpoint)||!safeKey(k.p256dh,65)||!safeKey(k.auth,16))return r.status(400).json({ok:false});await sql('INSERT INTO push_subscriptions(endpoint,session_token,shop,keys) VALUES($1,$2,$3,$4) ON CONFLICT(endpoint) DO UPDATE SET session_token=EXCLUDED.session_token,shop=EXCLUDED.shop,keys=EXCLUDED.keys,created=NOW()',b.endpoint,hash(cookie(q)),q.shop.id,JSON.stringify({p256dh:k.p256dh,auth:k.auth}));r.json({ok:true})});
